@@ -47,6 +47,8 @@ def run_lost(input_path: str, output_path: str):
                       "--print-attitude", output_path
                       ], cwd=LOST_DIR)
 
+
+# Must be run on a computer that has cloned the LOST repository
 if __name__ == "__main__":
   # Name of image to process
   input_path: str = os.path.abspath("input/img_7660.png")
