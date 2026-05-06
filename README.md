@@ -6,4 +6,4 @@ This is a pipeline for HSL's [LOST](https://github.com/UWCubeSat/lost) image gen
 - Compares determined attitudes to see if filtered image has been successfully identified within a percent error of the unfiltered image
 
 ### Instructions for running: 
-Make sure you have run `git clone` for the LOST directory somewhere on your device. `git clone` this repository. Make sure the calls to `make_clean_make()` and `generate_database` in `main.py`'s main method are not commented out, and run `python3 main.py`. 
+Make sure you have run `git clone` for the LOST directory somewhere on your device. `git clone` this repository. Make sure the calls to `make_clean_make()` and `generate_database` in `main.py`'s main method are not commented out during your first run (you can comment them out in later runs for efficiency), and run `python3 main.py`. 
