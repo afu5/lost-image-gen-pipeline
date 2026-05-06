@@ -1,6 +1,6 @@
 import os
 import subprocess
-from image_filters import motion_blur
+from image_filters import Filter, motion_blur, dark_current_noise_generator
 
 LOST_DIR = os.path.abspath("../lost")
 LOST = os.path.join(LOST_DIR, "lost")
@@ -31,7 +31,7 @@ def generate_database(database_name: str):
                         "--output", database_name
                       ], cwd=LOST_DIR)
 
-def run_lost(input_path: str, output_path: str):
+def run_lost(input_path: str, output_path: str, database_name: str):
   subprocess.run(args=[LOST, "pipeline",
                       "--png", input_path, 
                       "--focal-length", str(FOCAL_LENGTH), 
@@ -46,32 +46,35 @@ def run_lost(input_path: str, output_path: str):
                       "--attitude-algo", "dqm",
                       "--print-attitude", output_path
                       ], cwd=LOST_DIR)
-
-
-# Must be run on a computer that has cloned the LOST repository
-if __name__ == "__main__":
-  # Name of image to process
-  input_path: str = os.path.abspath("input/img_7660.png")
-
-  # Name of output attitude file and generated database
-  output_path: str = os.path.abspath("output/attitude.txt")
-  database_name: str = "my-database.dat"
-
+  
+def make_clean_make():
   # Make clean and make
-  # subprocess.run(args=["make", "clean"], cwd=LOST_DIR)
-  # subprocess.run(args=["make"], cwd=LOST_DIR)
+  subprocess.run(args=["make", "clean"], cwd=LOST_DIR)
+  subprocess.run(args=["make"], cwd=LOST_DIR)
 
-  # Generate database
-  generate_database(database_name)
-
+''' input_path is the path to your input image. output_path is the path for the generated
+    attitude.txt. database_name is the name of your already-generated database. filter is
+    the Filter enum for the filter you want to use. params is an array of the remaining
+    parameters that your filter requires to be run (check image_filters.py).'''
+def run_LOST_and_filter_once(input_path: str, output_path: str, database_name: str, 
+                            filter: Filter, params):
   # Run LOST on input_path
-  run_lost(input_path, output_path)
+  run_lost(input_path, output_path, database_name)
 
   # Apply filters (TODO: add customization flags to determine what is called)
   filtered_input_path = os.path.abspath("output/filtered_image.png")
   filtered_output_path = os.path.abspath("output/filtered_attitude.txt")
 
-  motion_blur(input_path, filtered_input_path, 15)
+  if filter == Filter.BRIGHT_OBSTRUCTION:
+    print("Not yet implemented!")
+    return
+  elif filter == Filter.MOTION_BLUR:
+    motion_blur(input_path, filtered_input_path, params[0], params[1])
+  elif filter == Filter.DARK_CURRENT_NOISE:
+    dark_current_noise_generator(input_path, filtered_input_path, params[0], 
+                                 params[1], params[2], params[3])
+  else:
+    print("Invalid Filter parameter in run_pipeline_once")
 
   # Run lost on filtered_input_path
   run_lost(filtered_input_path, filtered_output_path)
@@ -91,3 +94,24 @@ if __name__ == "__main__":
       print(attitude)
   except FileNotFoundError:
     print(filtered_output_path + " not found")
+
+# Must be run on a computer that has cloned the LOST repository
+if __name__ == "__main__":
+  # Make clean and compile LOST
+  make_clean_make()
+
+  # Name of image to process
+  input_path: str = os.path.abspath("input/img_7660.png")
+
+  # Name of output attitude file and generated database
+  output_path: str = os.path.abspath("output/attitude.txt")
+  database_name: str = "my-database.dat"
+
+  # Generate database
+  generate_database(database_name)
+
+  # Create parameters for your filter call (index 0 is the first argument 
+  # after input_path and output_path)
+  params = [15, 0]
+
+  run_LOST_and_filter_once(input_path, output_path, database_name, Filter.MOTION_BLUR, params)

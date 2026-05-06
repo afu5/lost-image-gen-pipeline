@@ -1,6 +1,12 @@
+from enum import Enum
 import cv2
 import numpy as np
 from PIL import Image as img
+
+class Filter(Enum):
+    BRIGHT_OBSTRUCTION = 0
+    MOTION_BLUR = 1
+    DARK_CURRENT_NOISE = 2
 
 # img_path: path to the image to be blurred
 # output_path: path to save the result image
