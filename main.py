@@ -57,7 +57,7 @@ def make_clean_make():
     the Filter enum for the filter you want to use. params is an array of the remaining
     parameters that your filter requires to be run (check image_filters.py).'''
 def run_LOST_and_filter_once(input_path: str, output_path: str, database_name: str, 
-                            filter: Filter, params):
+                            filter: Filter, params: list):
   # Run LOST on input_path
   run_lost(input_path, output_path, database_name)
 
