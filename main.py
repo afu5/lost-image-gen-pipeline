@@ -348,7 +348,7 @@ def dark_current_noise_study(output_folder: str, database_name: str):
 
     for i in range(runs):
       # Generate random image to process
-      input_path = generate_lost_image(
+      input_path, true_att_path = generate_lost_image(
         i=i,
         database=database_name,
         output_folder=output_folder
@@ -361,9 +361,7 @@ def dark_current_noise_study(output_folder: str, database_name: str):
       result = run_LOST_and_filter_once(input_path, output_folder, database_name, Filter.DARK_CURRENT_NOISE, params)
 
       if result:
-        # Compare attitudes
-        true_att_path = os.path.join(output_folder, "true_attitude.txt")
-        
+        # Compare attitudes        
         output_path = os.path.join(output_folder, "attitude.txt")
         filtered_output_path = os.path.join(output_folder, "filtered_attitude.txt")
 
