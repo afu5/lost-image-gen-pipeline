@@ -1,5 +1,8 @@
+import math
 import os
 import subprocess
+
+from matplotlib import pyplot as plt
 from image_filters import Filter, motion_blur, dark_current_noise_generator
 
 LOST_DIR = os.path.abspath("../lost")
@@ -97,18 +100,43 @@ def run_LOST_and_filter_once(input_path: str, output_folder: str, database_name:
 
   return True
 
-''' Compares attitudes given in the two input paths. Returns a dictionary
-    of percent error between attitude values for each attitude.'''
+def normalize(q):
+    norm = math.sqrt(sum(x*x for x in q))
+    return [x / norm for x in q]
+
+''' Compares attitudes given in the two input paths. Returns quaternion angular
+    distance between the two attitude files.'''
 def compare_attitudes(attitude_path: str, filtered_attitude_path: str):
   # Read attitude.txt and filtered_attitude.txt
   attitude = load_attitude_file(attitude_path)
   filtered_attitude = load_attitude_file(filtered_attitude_path)
-  result = {}
-  for attitude_type in attitude:
-    percent_error = ((filtered_attitude[attitude_type] - attitude[attitude_type]) 
-                      / attitude[attitude_type]) * 100
-    result[attitude_type] = percent_error
-  return result
+
+  q1 = normalize([
+      attitude["attitude_real"],
+      attitude["attitude_i"],
+      attitude["attitude_j"],
+      attitude["attitude_k"],
+  ])
+
+  q2 = normalize([
+      filtered_attitude["attitude_real"],
+      filtered_attitude["attitude_i"],
+      filtered_attitude["attitude_j"],
+      filtered_attitude["attitude_k"],
+  ])
+
+  dot = sum(a * b for a, b in zip(q1, q2))
+  dot = abs(dot)
+  dot = max(min(dot, 1.0), -1.0)
+
+  angle_rad = 2 * math.atan2(
+      math.sqrt(max(0.0, 1.0 - dot*dot)),
+      dot
+  )
+
+  angle_deg = math.degrees(angle_rad)
+
+  return angle_deg
 
 ''' Loads attitude file given in path, assuming it is formatted like LOST attitude output. Example:
       attitude_known 1
@@ -137,40 +165,67 @@ def load_attitude_file(path):
 # Must be run on a computer that has cloned the LOST repository
 if __name__ == "__main__":
   # Make clean and compile LOST (can comment out once run once)
-  make_clean_make()
+  # make_clean_make()
 
   # Name of output folder and generated database
   output_folder: str = os.path.abspath("output")
   database_name: str = "my-database.dat"
 
   # Generate database (can comment out once run once)
-  generate_database(database_name)
+  # generate_database(database_name)
 
-  ''' This code should be in a loop: '''
-  # Name of image to process (TODO: Generate the image with LOST, and set constants to match)
-  input_path: str = os.path.abspath("input/img_7660.png")
+  runs_per_param = 1
+  kernel_sizes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 25]
+  success_rates = []
+  average_angle_error_degs = []
+  # Modify this loop based on runs
+  for kernel_size in kernel_sizes:
+    successes = 0
+    angle_error_degs = []
 
-  # Parameters for your filter call (index 0 is the first argument 
-  # after img_path and output_path for the method in image_filters.py)
-  params = [11, 0]
+    for i in range(runs_per_param):
+      # Name of image to process (TODO: Generate the image with LOST, and set constants to match)
+      input_path: str = os.path.abspath("input/img_7660.png")
 
-  result = run_LOST_and_filter_once(input_path, output_folder, database_name, Filter.MOTION_BLUR, params)
+      # Parameters for your filter call (index 0 is the first argument 
+      # after img_path and output_path for the method in image_filters.py)
+      params = [kernel_size, 0]
 
-  if result:
-    # Compare attitudes
-    output_path = output_folder + "/attitude.txt"
-    filtered_output_path = output_folder + "/filtered_attitude.txt"
-    percent_errors = compare_attitudes(output_path, filtered_output_path)
+      result = run_LOST_and_filter_once(input_path, output_folder, database_name, Filter.MOTION_BLUR, params)
 
-    # Check if any attitude values are more than 5 percent off
-    abs_percent_errors = [abs(x) for x in percent_errors.values()]
-    highest_percent_error = max(list(abs_percent_errors))
-    
-    if highest_percent_error > 5:
-      print("RESULT: Misidentified attitude for filtered image")
+      if result:
+        # Compare attitudes
+        output_path = output_folder + "/attitude.txt"
+        filtered_output_path = output_folder + "/filtered_attitude.txt"
+        angle_error_deg = compare_attitudes(output_path, filtered_output_path)
+        
+        if angle_error_deg > 0.05:
+          print("RESULT: Misidentified attitude for filtered image")
+        else:
+          successes += 1
+          print("RESULT: Successfully identified attitude for filtered image")
+        
+        angle_error_degs.append(angle_error_deg)
+        print("Angular attitude error: " + str(angle_error_deg) + " degrees")
+      else:
+        print("RESULT: Unable to identify attitude for filtered image")
+  
+    success_rate = successes / runs_per_param
+    if angle_error_degs:
+      average_angle_error_deg = sum(angle_error_degs) / len(angle_error_degs)
     else:
-      print("RESULT: Successfully identified attitude for filtered image")
-    
-    print("Highest percent error: " + str(highest_percent_error))
-  else:
-    print("RESULT: Unable to identify attitude for filtered image")
+      average_angle_error_deg = None
+    success_rates.append(success_rate)
+    average_angle_error_degs.append(average_angle_error_deg)
+
+  # plt.plot(kernel_sizes, success_rates, marker='o', label='Success Rate')
+  plt.plot(kernel_sizes, average_angle_error_degs, marker='s', label='Avg Error')
+  plt.xlabel("Motion Blur Kernel Size")
+  plt.ylabel("PLACEHOLDER")
+
+  plt.title("Motion Blur Study")
+
+  plt.grid(True)
+  plt.legend()
+
+  plt.show()
