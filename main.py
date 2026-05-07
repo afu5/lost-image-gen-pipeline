@@ -49,6 +49,41 @@ def run_lost(input_path: str, output_path: str, database_name: str):
                       "--attitude-algo", "dqm",
                       "--print-attitude", output_path
                       ], cwd=LOST_DIR)
+
+def generate_lost_image(
+  i: int,
+  database: str,
+  output_folder: str,
+  width: int = 1024,
+  height: int = 1024,
+  exposure: float = 0.6,
+  fov: float = 20.0,
+):
+  input_path = os.path.join(output_folder, f"input_{i}.png")
+  raw_path = os.path.join(output_folder, f"raw_{i}.png")
+  att_path = os.path.join(output_folder, f"attitude_{i}.txt")
+
+  cmd = [
+      LOST,
+      "pipeline",
+      "--generate", "1",
+      "--generate-x-resolution", str(width),
+      "--generate-y-resolution", str(height),
+      "--generate-exposure", str(exposure),
+      "--fov", str(fov),
+      "--database", database,
+      "--attitude-algo", "dqm",
+      "--centroid-algo", "cog",
+      "--star-id-algo", "py",   
+      "--print-attitude", att_path,
+      "--generate-random-attitudes", "true",
+      "--plot-input", input_path,
+      "--plot-raw-input", raw_path,
+  ]
+
+  subprocess.run(cmd, cwd=LOST_DIR, check=True)
+
+  return os.path.join(LOST_DIR, f"input_{i}.png")
   
 def make_clean_make():
   # Make clean and make
@@ -162,20 +197,9 @@ def load_attitude_file(path):
                 data[key] = value
     return data
 
-# Must be run on a computer that has cloned the LOST repository
-if __name__ == "__main__":
-  # Make clean and compile LOST (can comment out once run once)
-  # make_clean_make()
-
-  # Name of output folder and generated database
-  output_folder: str = os.path.abspath("output")
-  database_name: str = "my-database.dat"
-
-  # Generate database (can comment out once run once)
-  # generate_database(database_name)
-
+def motion_blur_study(output_folder: str, database_name: str):
   runs_per_param = 1
-  kernel_sizes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 25]
+  kernel_sizes = range(1, 26)
   success_rates = []
   average_angle_error_degs = []
   # Modify this loop based on runs
@@ -185,7 +209,11 @@ if __name__ == "__main__":
 
     for i in range(runs_per_param):
       # Name of image to process (TODO: Generate the image with LOST, and set constants to match)
-      input_path: str = os.path.abspath("input/img_7660.png")
+      input_path = generate_lost_image(
+        i=i,
+        database=database_name,
+        output_folder=output_folder
+      )
 
       # Parameters for your filter call (index 0 is the first argument 
       # after img_path and output_path for the method in image_filters.py)
@@ -229,3 +257,17 @@ if __name__ == "__main__":
   plt.legend()
 
   plt.show()
+
+# Must be run on a computer that has cloned the LOST repository
+if __name__ == "__main__":
+  # Make clean and compile LOST (can comment out once run once)
+  # make_clean_make()
+
+  # Name of output folder and generated database
+  output_folder: str = os.path.abspath("output")
+  database_name: str = "my-database.dat"
+
+  # Generate database (can comment out once run once)
+  # generate_database(database_name)
+
+  motion_blur_study(output_folder, database_name)
