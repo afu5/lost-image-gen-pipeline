@@ -36,7 +36,7 @@ def generate_database(database_name: str):
                         "--kvector-max-distance", str(KVECTOR_MAX_DISTANCE),
                         "--kvector-distance-bins", str(KVECTOR_DISTANCE_BINS),
                         "--output", database_name
-                      ], cwd=LOST_DIR)
+                      ], cwd=LOST_DIR, check=True)
 
 def run_lost(input_path: str, output_path: str, database_name: str):
   subprocess.run(args=[LOST, "pipeline",
@@ -52,7 +52,7 @@ def run_lost(input_path: str, output_path: str, database_name: str):
                       "--max-mismatch-prob", str(MAX_MISMATCH_PROB),
                       "--attitude-algo", "dqm",
                       "--print-attitude", output_path
-                      ], cwd=LOST_DIR)
+                      ], cwd=LOST_DIR, check=True)
 
 def generate_lost_image(
   i: int,
@@ -64,8 +64,8 @@ def generate_lost_image(
   fov: float = 20.0,
 ):
   input_path = os.path.join(output_folder, f"input_{i}.png")
-  raw_path = os.path.join(output_folder, f"raw_{i}.png")
-  att_path = os.path.join(output_folder, f"true_attitude_{i}.txt")
+  raw_path = os.path.join(output_folder, f"raw.png")
+  att_path = os.path.join(output_folder, f"true_attitude.txt")
 
   cmd = [
       LOST,
@@ -87,7 +87,7 @@ def generate_lost_image(
 
   subprocess.run(cmd, cwd=LOST_DIR, check=True)
 
-  return raw_path, att_path
+  return raw_path
   
 def make_clean_make():
   # Make clean and make
@@ -237,7 +237,7 @@ def motion_blur_study(output_folder: str, database_name: str):
 
       for i in range(runs_per_param):
         # Generate random image to process
-        input_path, true_att_path = generate_lost_image(
+        input_path = generate_lost_image(
           i=i,
           database=database_name,
           output_folder=output_folder
@@ -250,13 +250,16 @@ def motion_blur_study(output_folder: str, database_name: str):
         result = run_LOST_and_filter_once(input_path, output_folder, database_name, Filter.MOTION_BLUR, params)
 
         if result:
-          # Compare attitudes          
+          # Compare attitudes 
+          true_att_path = os.path.join(output_folder, "true_attitude.txt")         
+
           output_path = os.path.join(output_folder, "attitude.txt")
           filtered_output_path = os.path.join(output_folder, "filtered_attitude.txt")
 
           unfiltered_error_deg = compare_attitudes(true_att_path, output_path)
           if unfiltered_error_deg > 0.05:
             print("RESULT: Identified INACCURATE attitude for UNFILTERED image")
+            continue
           else:
             print("RESULT: Identified ACCURATE attitude for UNFILTERED image")
 
@@ -299,6 +302,8 @@ def motion_blur_study(output_folder: str, database_name: str):
     
   print(average_angle_error_deg)
   print(success_rate)
+
+  # TODO: Add standard deviations?
 
   # Plot "Motion Blur Angular Errors vs Kernel Size" plot 
   plt.figure()
@@ -348,7 +353,7 @@ def dark_current_noise_study(output_folder: str, database_name: str):
 
     for i in range(runs):
       # Generate random image to process
-      input_path, true_att_path = generate_lost_image(
+      input_path = generate_lost_image(
         i=i,
         database=database_name,
         output_folder=output_folder
@@ -361,13 +366,16 @@ def dark_current_noise_study(output_folder: str, database_name: str):
       result = run_LOST_and_filter_once(input_path, output_folder, database_name, Filter.DARK_CURRENT_NOISE, params)
 
       if result:
-        # Compare attitudes        
+        # Compare attitudes
+        true_att_path = os.path.join(output_folder, "true_attitude.txt")
+        
         output_path = os.path.join(output_folder, "attitude.txt")
         filtered_output_path = os.path.join(output_folder, "filtered_attitude.txt")
 
         unfiltered_error_deg = compare_attitudes(true_att_path, output_path)
         if unfiltered_error_deg > 0.05:
           print("RESULT: Identified INACCURATE attitude for UNFILTERED image")
+          continue
         else:
           print("RESULT: Identified ACCURATE attitude for UNFILTERED image")
 
@@ -399,7 +407,7 @@ def dark_current_noise_study(output_folder: str, database_name: str):
 
   success_rate = successes / runs
   if angle_error_degs:
-    average_angle_error_deg = sum(angle_error_degs) / len(angle_error_degs)
+    average_angle_error_deg = np.nanmean(angle_error_degs)
     success_rate_identifiable = successes / len(angle_error_degs)
   else:
     average_angle_error_deg = None
@@ -409,6 +417,8 @@ def dark_current_noise_study(output_folder: str, database_name: str):
   print("   Success rate overall: " + str(success_rate))
   print("   Success rate out of images that were identified unfiltered: " + str(success_rate_identifiable))
   print("   Average angle error degree: " + str(average_angle_error_deg))
+
+  # TODO: Add standard deviations?
 
   plt.scatter(range(len(angle_error_degs)), angle_error_degs)
 
