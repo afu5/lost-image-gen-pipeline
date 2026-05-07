@@ -62,7 +62,7 @@ def generate_lost_image(
 ):
   input_path = os.path.join(output_folder, f"input_{i}.png")
   raw_path = os.path.join(output_folder, f"raw.png")
-  att_path = os.path.join(output_folder, f"attitude.txt")
+  att_path = os.path.join(output_folder, f"true_attitude.txt")
 
   cmd = [
       LOST,
@@ -78,7 +78,7 @@ def generate_lost_image(
       "--star-id-algo", "py",   
       "--print-attitude", att_path,
       "--generate-random-attitudes", "true",
-      "--plot-input", input_path,
+      # "--plot-input", input_path,
       "--plot-raw-input", raw_path,
   ]
 
@@ -199,7 +199,7 @@ def load_attitude_file(path):
     return data
 
 def motion_blur_study(output_folder: str, database_name: str):
-  runs_per_param = 1
+  runs_per_param = 3
   kernel_sizes = range(1, 26)
   success_rates = []
   average_angle_error_degs = []
@@ -209,14 +209,12 @@ def motion_blur_study(output_folder: str, database_name: str):
     angle_error_degs = []
 
     for i in range(runs_per_param):
-      # Name of image to process (TODO: Generate the image with LOST, and set constants to match)
+      # Generate random image to process
       input_path = generate_lost_image(
         i=i,
         database=database_name,
         output_folder=output_folder
       )
-
-      print(input_path)
 
       # Parameters for your filter call (index 0 is the first argument 
       # after img_path and output_path for the method in image_filters.py)
@@ -226,20 +224,29 @@ def motion_blur_study(output_folder: str, database_name: str):
 
       if result:
         # Compare attitudes
+        true_att_path = os.path.join(output_folder, "true_attitude.txt")
+        
         output_path = os.path.join(output_folder, "attitude.txt")
         filtered_output_path = os.path.join(output_folder, "filtered_attitude.txt")
-        angle_error_deg = compare_attitudes(output_path, filtered_output_path)
+
+        unfiltered_error_deg = compare_attitudes(true_att_path, output_path)
+        if unfiltered_error_deg > 0.05:
+          print("RESULT: Identified INACCURATE attitude for UNFILTERED image")
+        else:
+          print("RESULT: Identified ACCURATE attitude for UNFILTERED image")
+
+        filtered_error_deg = compare_attitudes(true_att_path, filtered_output_path)
         
-        if angle_error_deg > 0.05:
-          print("RESULT: Misidentified attitude for filtered image")
+        if filtered_error_deg > 0.05:
+          print("RESULT: Identified INACCURATE for FILTERED image")
         else:
           successes += 1
-          print("RESULT: Successfully identified attitude for filtered image")
+          print("RESULT: Identified ACCURATE attitude for FILTERED image")
         
-        angle_error_degs.append(angle_error_deg)
-        print("Angular attitude error: " + str(angle_error_deg) + " degrees")
+        angle_error_degs.append(filtered_error_deg)
+        print("Angular attitude error: " + str(filtered_error_deg) + " degrees")
       else:
-        print("RESULT: Unable to identify attitude for filtered image")
+        print("RESULT: Unable to identify attitude for an image")
   
     success_rate = successes / runs_per_param
     if angle_error_degs:
@@ -248,6 +255,9 @@ def motion_blur_study(output_folder: str, database_name: str):
       average_angle_error_deg = None
     success_rates.append(success_rate)
     average_angle_error_degs.append(average_angle_error_deg)
+  
+  print(average_angle_error_deg)
+  print(success_rate)
 
   plt.plot(kernel_sizes, success_rates, marker='o', label='Success Rate')
   # plt.plot(kernel_sizes, average_angle_error_degs, marker='s', label='Avg Error')
@@ -261,16 +271,85 @@ def motion_blur_study(output_folder: str, database_name: str):
 
   plt.show()
 
+
+def dark_current_noise_study(output_folder: str, database_name: str):
+  runs = 100
+  successes = 0
+  angle_error_degs = []
+
+  for i in range(runs):
+    # Generate random image to process
+    input_path = generate_lost_image(
+      i=i,
+      database=database_name,
+      output_folder=output_folder
+    )
+
+    # Parameters for your filter call (index 0 is the first argument 
+    # after img_path and output_path for the method in image_filters.py)
+    params = [0.05, 450/1300000, 1, 0.25]
+
+    result = run_LOST_and_filter_once(input_path, output_folder, database_name, Filter.DARK_CURRENT_NOISE, params)
+
+    if result:
+      # Compare attitudes
+      true_att_path = os.path.join(output_folder, "true_attitude.txt")
+      
+      output_path = os.path.join(output_folder, "attitude.txt")
+      filtered_output_path = os.path.join(output_folder, "filtered_attitude.txt")
+
+      unfiltered_error_deg = compare_attitudes(true_att_path, output_path)
+      if unfiltered_error_deg > 0.05:
+        print("RESULT: Identified INACCURATE attitude for UNFILTERED image")
+      else:
+        print("RESULT: Identified ACCURATE attitude for UNFILTERED image")
+
+      filtered_error_deg = compare_attitudes(output_path, filtered_output_path)
+      
+      if filtered_error_deg > 0.05:
+        print("RESULT: Identified INACCURATE for FILTERED image")
+      else:
+        successes += 1
+        print("RESULT: Identified ACCURATE attitude for FILTERED image")
+      
+      angle_error_degs.append(filtered_error_deg)
+      print("Angular attitude error: " + str(filtered_error_deg) + " degrees")
+    else:
+      print("RESULT: Unable to identify attitude for an image")
+
+  success_rate = successes / runs
+  success_rate_identifiable = successes / len(angle_error_degs)
+  if angle_error_degs:
+    average_angle_error_deg = sum(angle_error_degs) / len(angle_error_degs)
+  else:
+    average_angle_error_deg = None
+
+  print("RESULTS: ")
+  print("Success rate overall: " + str(success_rate))
+  print("Success rate out of images that were identified unfiltered: " + str(success_rate_identifiable))
+  print("Average angle error degree: " + str(average_angle_error_deg))
+
+  plt.scatter(range(len(angle_error_degs)), angle_error_degs)
+
+  plt.xlabel("Run")
+  plt.ylabel("Angular Error (deg)")
+  plt.title("Dark Current Noise Angular Errors")
+
+  plt.grid(True)
+  plt.show()
+
 # Must be run on a computer that has cloned the LOST repository
 if __name__ == "__main__":
   # Make clean and compile LOST (can comment out once run once)
-  # make_clean_make()
+  make_clean_make()
 
   # Name of output folder and generated database
   output_folder: str = os.path.abspath("output")
   database_name: str = "my-database.dat"
 
   # Generate database (can comment out once run once)
-  # generate_database(database_name)
+  generate_database(database_name)
 
   motion_blur_study(output_folder, database_name)
+
+  dark_current_noise_study(output_folder, database_name)
