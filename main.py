@@ -9,20 +9,22 @@ from image_filters import Filter, motion_blur, dark_current_noise_generator
 LOST_DIR = os.path.abspath("../lost")
 LOST = os.path.join(LOST_DIR, "lost")
 
-# Current values determined by the LOST README commands
-# Generating database
+# Values determined by the LOST README commands
 
+# Generating database
 MAX_STARS = 5000
 KVECTOR_MIN_DISTANCE = 0.2
 KVECTOR_MAX_DISTANCE = 15
 KVECTOR_DISTANCE_BINS = 10000
 
-# Running LOST for img_7660.png
+# Running LOST for img_7660.png (NOT used for random images)
 FOCAL_LENGTH = 49
 PIXEL_SIZE = 22.2
 CENTROID_MAG_FILTER = 5
-ANGULAR_TOLERANCE = 0.05
 FALSE_STARS = 1000
+
+# Used for random images
+ANGULAR_TOLERANCE = 0.05
 MAX_MISMATCH_PROB = 0.0001
 
 def generate_database(database_name: str): 
@@ -202,7 +204,7 @@ def motion_blur_study(output_folder: str, database_name: str):
   full_csv_path = os.path.join(output_folder, "motion_blur_full.csv")
   summary_csv_path = os.path.join(output_folder, "motion_blur_summary.csv")
 
-  runs_per_param = 3
+  runs_per_param = 20
   kernel_sizes = range(1, 26)
   success_rates = []
   average_angle_error_degs = []
@@ -426,15 +428,15 @@ def dark_current_noise_study(output_folder: str, database_name: str):
 # Must be run on a computer that has cloned the LOST repository
 if __name__ == "__main__":
   # Make clean and compile LOST (can comment out once run once)
-  # make_clean_make()
+  make_clean_make()
 
   # Name of output folder and generated database
   output_folder: str = os.path.abspath("output")
   database_name: str = "my-database.dat"
 
   # Generate database (can comment out once run once)
-  # generate_database(database_name)
+  generate_database(database_name)
 
-  # motion_blur_study(output_folder, database_name)
+  motion_blur_study(output_folder, database_name)
 
   dark_current_noise_study(output_folder, database_name)
