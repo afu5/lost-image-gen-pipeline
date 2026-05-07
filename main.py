@@ -4,6 +4,7 @@ import subprocess
 import csv
 
 from matplotlib import pyplot as plt
+import numpy as np
 from image_filters import Filter, motion_blur, dark_current_noise_generator
 
 LOST_DIR = os.path.abspath("../lost")
@@ -63,8 +64,8 @@ def generate_lost_image(
   fov: float = 20.0,
 ):
   input_path = os.path.join(output_folder, f"input_{i}.png")
-  raw_path = os.path.join(output_folder, f"raw.png")
-  att_path = os.path.join(output_folder, f"true_attitude.txt")
+  raw_path = os.path.join(output_folder, f"raw_{i}.png")
+  att_path = os.path.join(output_folder, f"true_attitude_{i}.txt")
 
   cmd = [
       LOST,
@@ -86,7 +87,7 @@ def generate_lost_image(
 
   subprocess.run(cmd, cwd=LOST_DIR, check=True)
 
-  return raw_path
+  return raw_path, att_path
   
 def make_clean_make():
   # Make clean and make
@@ -204,7 +205,7 @@ def motion_blur_study(output_folder: str, database_name: str):
   full_csv_path = os.path.join(output_folder, "motion_blur_full.csv")
   summary_csv_path = os.path.join(output_folder, "motion_blur_summary.csv")
 
-  runs_per_param = 20
+  runs_per_param = 50
   kernel_sizes = range(1, 26)
   success_rates = []
   average_angle_error_degs = []
@@ -236,7 +237,7 @@ def motion_blur_study(output_folder: str, database_name: str):
 
       for i in range(runs_per_param):
         # Generate random image to process
-        input_path = generate_lost_image(
+        input_path, true_att_path = generate_lost_image(
           i=i,
           database=database_name,
           output_folder=output_folder
@@ -249,9 +250,7 @@ def motion_blur_study(output_folder: str, database_name: str):
         result = run_LOST_and_filter_once(input_path, output_folder, database_name, Filter.MOTION_BLUR, params)
 
         if result:
-          # Compare attitudes
-          true_att_path = os.path.join(output_folder, "true_attitude.txt")
-          
+          # Compare attitudes          
           output_path = os.path.join(output_folder, "attitude.txt")
           filtered_output_path = os.path.join(output_folder, "filtered_attitude.txt")
 
@@ -280,13 +279,12 @@ def motion_blur_study(output_folder: str, database_name: str):
           angle_error_degs.append(filtered_error_deg)
           print("Angular attitude error: " + str(filtered_error_deg) + " degrees")
         else:
-          # TODO: Decide if this penalty is a good idea
-          angle_error_degs.append(180)
+          angle_error_degs.append(float("nan"))
           print("RESULT: Unable to identify attitude for an image")
     
       success_rate = successes / runs_per_param
       if angle_error_degs:
-        average_angle_error_deg = sum(angle_error_degs) / len(angle_error_degs)
+        average_angle_error_deg = np.nanmean(angle_error_degs)
       else:
         average_angle_error_deg = None
       
@@ -334,7 +332,7 @@ def motion_blur_study(output_folder: str, database_name: str):
 def dark_current_noise_study(output_folder: str, database_name: str):
   csv_path = os.path.join(output_folder, "dark_current_results.csv")
 
-  runs = 100
+  runs = 1000
   successes = 0
   angle_error_degs = []
 
