@@ -37,14 +37,15 @@ def generate_database(database_name: str):
 def run_lost(input_path: str, output_path: str, database_name: str):
   subprocess.run(args=[LOST, "pipeline",
                       "--png", input_path, 
-                      "--focal-length", str(FOCAL_LENGTH), 
-                      "--pixel-size", str(PIXEL_SIZE), 
+                      # HARDCODED (FIX LATER)
+                      # "--focal-length", str((1024 * 1) / (2 * math.tan(20.0 / 2))), 
+                      # "--pixel-size", str(1), 
                       "--centroid-algo", "cog",
-                      "--centroid-mag-filter", str(CENTROID_MAG_FILTER),
+                      # "--centroid-mag-filter", str(CENTROID_MAG_FILTER),
                       "--database", database_name,
                       "--star-id-algo", "py",
                       "--angular-tolerance", str(ANGULAR_TOLERANCE),
-                      "--false-stars", str(FALSE_STARS),
+                      # "--false-stars", str(FALSE_STARS),
                       "--max-mismatch-prob", str(MAX_MISMATCH_PROB),
                       "--attitude-algo", "dqm",
                       "--print-attitude", output_path
@@ -60,8 +61,8 @@ def generate_lost_image(
   fov: float = 20.0,
 ):
   input_path = os.path.join(output_folder, f"input_{i}.png")
-  raw_path = os.path.join(output_folder, f"raw_{i}.png")
-  att_path = os.path.join(output_folder, f"attitude_{i}.txt")
+  raw_path = os.path.join(output_folder, f"raw.png")
+  att_path = os.path.join(output_folder, f"attitude.txt")
 
   cmd = [
       LOST,
@@ -83,7 +84,7 @@ def generate_lost_image(
 
   subprocess.run(cmd, cwd=LOST_DIR, check=True)
 
-  return os.path.join(LOST_DIR, f"input_{i}.png")
+  return raw_path
   
 def make_clean_make():
   # Make clean and make
@@ -215,6 +216,8 @@ def motion_blur_study(output_folder: str, database_name: str):
         output_folder=output_folder
       )
 
+      print(input_path)
+
       # Parameters for your filter call (index 0 is the first argument 
       # after img_path and output_path for the method in image_filters.py)
       params = [kernel_size, 0]
@@ -223,8 +226,8 @@ def motion_blur_study(output_folder: str, database_name: str):
 
       if result:
         # Compare attitudes
-        output_path = output_folder + "/attitude.txt"
-        filtered_output_path = output_folder + "/filtered_attitude.txt"
+        output_path = os.path.join(output_folder, "attitude.txt")
+        filtered_output_path = os.path.join(output_folder, "filtered_attitude.txt")
         angle_error_deg = compare_attitudes(output_path, filtered_output_path)
         
         if angle_error_deg > 0.05:
@@ -246,8 +249,8 @@ def motion_blur_study(output_folder: str, database_name: str):
     success_rates.append(success_rate)
     average_angle_error_degs.append(average_angle_error_deg)
 
-  # plt.plot(kernel_sizes, success_rates, marker='o', label='Success Rate')
-  plt.plot(kernel_sizes, average_angle_error_degs, marker='s', label='Avg Error')
+  plt.plot(kernel_sizes, success_rates, marker='o', label='Success Rate')
+  # plt.plot(kernel_sizes, average_angle_error_degs, marker='s', label='Avg Error')
   plt.xlabel("Motion Blur Kernel Size")
   plt.ylabel("PLACEHOLDER")
 
