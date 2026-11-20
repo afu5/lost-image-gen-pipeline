@@ -5,6 +5,7 @@ import csv
 
 from matplotlib import pyplot as plt
 import numpy as np
+import pandas as pd
 from image_filters import Filter, motion_blur, dark_current_noise_generator
 
 LOST_DIR = os.path.abspath("../lost")
@@ -12,11 +13,15 @@ LOST = os.path.join(LOST_DIR, "lost")
 
 # Values determined by the LOST README commands
 
-# Generating database
+# Generating database:
+# Pyramid
 MAX_STARS = 5000
 KVECTOR_MIN_DISTANCE = 0.2
 KVECTOR_MAX_DISTANCE = 15
 KVECTOR_DISTANCE_BINS = 10000
+# Tetra
+MIN_MAG = 7
+TETRA_MAX_ANGLE = 20
 
 # Running LOST for img_7660.png (NOT used for random images)
 FOCAL_LENGTH = 49
@@ -28,13 +33,21 @@ FALSE_STARS = 1000
 ANGULAR_TOLERANCE = 0.05
 MAX_MISMATCH_PROB = 0.0001
 
-def generate_database(database_name: str): 
+def generate_pyramid_database(database_name: str): 
   subprocess.run(args=[LOST, "database",
                         "--max-stars", str(MAX_STARS),
                         "--kvector",
                         "--kvector-min-distance", str(KVECTOR_MIN_DISTANCE),
                         "--kvector-max-distance", str(KVECTOR_MAX_DISTANCE),
                         "--kvector-distance-bins", str(KVECTOR_DISTANCE_BINS),
+                        "--output", database_name
+                      ], cwd=LOST_DIR, check=True)
+  
+def generate_tetra_database(database_name: str): 
+  subprocess.run(args=[LOST, "database",
+                        "--min-mag", str(MIN_MAG),
+                        "--tetra",
+                        "--tetra-max-angle", str(TETRA_MAX_ANGLE),
                         "--output", database_name
                       ], cwd=LOST_DIR, check=True)
 
@@ -46,7 +59,7 @@ def run_lost(input_path: str, output_path: str, database_name: str):
                       "--centroid-algo", "cog",
                       # "--centroid-mag-filter", str(CENTROID_MAG_FILTER),
                       "--database", database_name,
-                      "--star-id-algo", "py",
+                      "--star-id-algo", "tetra",
                       "--angular-tolerance", str(ANGULAR_TOLERANCE),
                       # "--false-stars", str(FALSE_STARS),
                       "--max-mismatch-prob", str(MAX_MISMATCH_PROB),
@@ -78,11 +91,13 @@ def generate_lost_image(
       "--database", database,
       "--attitude-algo", "dqm",
       "--centroid-algo", "cog",
-      "--star-id-algo", "py",   
+      "--star-id-algo", "tetra",   
       "--print-attitude", att_path,
       "--generate-random-attitudes", "true",
       # "--plot-input", input_path,
       "--plot-raw-input", raw_path,
+      "--generate-shot-noise", "true", 
+      "--generate-read-noise-stddev", str(0.05)
   ]
 
   subprocess.run(cmd, cwd=LOST_DIR, check=True)
@@ -205,8 +220,9 @@ def motion_blur_study(output_folder: str, database_name: str):
   full_csv_path = os.path.join(output_folder, "motion_blur_full.csv")
   summary_csv_path = os.path.join(output_folder, "motion_blur_summary.csv")
 
-  runs_per_param = 50
-  kernel_sizes = range(1, 26)
+  runs_per_param = 100
+  kernel_sizes = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 20, 25, 30]
+  
   success_rates = []
   average_angle_error_degs = []
 
@@ -235,13 +251,23 @@ def motion_blur_study(output_folder: str, database_name: str):
       successes = 0
       angle_error_degs = []
 
-      for i in range(runs_per_param):
-        # Generate random image to process
+      for i in range(runs_per_param):      
+        true_att_path = os.path.join(output_folder, "true_attitude.txt")     
+        # input_path = os.path.join(os.path.abspath("input"), "special.png")
+
         input_path = generate_lost_image(
           i=i,
           database=database_name,
           output_folder=output_folder
         )
+
+        while load_attitude_file(true_att_path).get("attitude_known") == 0:
+          # Generate random image to process
+          input_path = generate_lost_image(
+            i=i,
+            database=database_name,
+            output_folder=output_folder
+          )
 
         # Parameters for your filter call (index 0 is the first argument 
         # after img_path and output_path for the method in image_filters.py)
@@ -251,8 +277,6 @@ def motion_blur_study(output_folder: str, database_name: str):
 
         if result:
           # Compare attitudes 
-          true_att_path = os.path.join(output_folder, "true_attitude.txt")         
-
           output_path = os.path.join(output_folder, "attitude.txt")
           filtered_output_path = os.path.join(output_folder, "filtered_attitude.txt")
 
@@ -266,7 +290,7 @@ def motion_blur_study(output_folder: str, database_name: str):
           filtered_error_deg = compare_attitudes(output_path, filtered_output_path)
           
           if filtered_error_deg > 0.05:
-            print("RESULT: Identified INACCURATE for FILTERED image")
+            print("RESULT: Identified INACCURATE attitude for FILTERED image")
           else:
             successes += 1
             print("RESULT: Identified ACCURATE attitude for FILTERED image")
@@ -330,18 +354,77 @@ def motion_blur_study(output_folder: str, database_name: str):
 
   plt.grid(True)
 
-  plt.savefig(os.path.join(output_folder, "motion_blur_success_plot.png"))
+  plt.savefig(os.path.join(output_folder, "motion_blur_success_plot.png"), dpi=900)
   plt.show()
   plt.close()
+
+def plot_motion_blur_results(
+    summary_csv_path: str,
+    output_error_plot: str = "motion_blur_error_plot.png",
+    output_success_plot: str = "motion_blur_success_plot.png"
+):
+    df = pd.read_csv(summary_csv_path)
+
+    kernel_sizes = df["kernel_size"].tolist()
+    average_angle_error_degs = df["average_error_deg"].tolist()
+    success_rates = df["success_rate"].tolist()
+
+    print("Average Angular Errors:")
+    print(average_angle_error_degs)
+
+    print("Success Rates:")
+    print(success_rates)
+
+    plt.rcParams.update({'font.size': 14})
+
+    plt.figure()
+
+    plt.plot(
+        kernel_sizes,
+        average_angle_error_degs,
+        marker='s',
+        label='Avg Error'
+    )
+
+    plt.xlabel("Motion Blur Kernel Size")
+    plt.ylabel("Angular Attitude Error (deg)")
+    plt.title("Motion Blur Angular Errors vs Kernel Size")
+
+    plt.grid(True)
+
+    plt.savefig(output_error_plot, dpi=900)
+    plt.show()
+    plt.close()
+
+    plt.figure()
+
+    plt.plot(
+        kernel_sizes,
+        success_rates,
+        marker='o',
+        label='Success Rate'
+    )
+
+    plt.xlabel("Motion Blur Kernel Size")
+    plt.ylabel("Successful Identifications / Total Runs")
+    plt.title("Success Rate vs Kernel Size")
+
+    plt.rcParams.update({'font.size': 14})
+
+    plt.grid(True)
+
+    plt.savefig(output_success_plot, dpi=900)
+    plt.show()
+    plt.close()
 
 def dark_current_noise_study(output_folder: str, database_name: str):
   csv_path = os.path.join(output_folder, "dark_current_results.csv")
 
-  runs = 1000
+  runs = 250
+  
   successes = 0
   angle_error_degs = []
 
-  # Print CSV file headers for saving
   with open(csv_path, "w", newline="") as csvfile:
     writer = csv.writer(csvfile)
     writer.writerow([
@@ -358,10 +441,11 @@ def dark_current_noise_study(output_folder: str, database_name: str):
         database=database_name,
         output_folder=output_folder
       )
+      # input_path = os.path.join(os.path.abspath("input"), "special.png")
 
       # Parameters for your filter call (index 0 is the first argument 
       # after img_path and output_path for the method in image_filters.py)
-      params = [0.05, 450/1300000, 1, 0.25]
+      params = [2.2, 10, 1, 0.25]
 
       result = run_LOST_and_filter_once(input_path, output_folder, database_name, Filter.DARK_CURRENT_NOISE, params)
 
@@ -424,25 +508,68 @@ def dark_current_noise_study(output_folder: str, database_name: str):
 
   plt.xlabel("Run")
   plt.ylabel("Angular Attitude Error (deg)")
-  plt.title("Dark Current Noise Angular Errors")
+  plt.title("Image Noise Angular Errors")
 
   plt.grid(True)
-  plt.savefig(os.path.join(output_folder, "dark_current_plot.png"))
+  plt.savefig(os.path.join(output_folder, "dark_current_plot.png"), dpi=900)
   plt.show()
   plt.close()
+
+def plot_dark_current_results(csv_path: str, output_path: str = "dark_current_plot.png"):
+    df = pd.read_csv(csv_path)
+
+    angle_error_degs = df["filtered_error_deg"].dropna().tolist()
+
+    runs = len(df)
+    successes = df["success"].sum()
+
+    success_rate = successes / runs if runs > 0 else 0
+    success_rate_identifiable = (
+        successes / len(angle_error_degs)
+        if len(angle_error_degs) > 0 else 0
+    )
+
+    average_angle_error_deg = (
+        sum(angle_error_degs) / len(angle_error_degs)
+        if len(angle_error_degs) > 0 else None
+    )
+
+    print("RESULTS:")
+    print(f"   Success rate overall: {success_rate}")
+    print(f"   Success rate out of identifiable images: {success_rate_identifiable}")
+    print(f"   Average angle error degree: {average_angle_error_deg}")
+
+    plt.scatter(range(len(angle_error_degs)), angle_error_degs)
+
+    plt.xlabel("Run")
+    plt.ylabel("Angular Attitude Error (deg)")
+    plt.title("Image Noise Angular Errors")
+
+    plt.rcParams.update({'font.size': 14})
+
+    plt.grid(True)
+
+    plt.savefig(output_path, dpi=900)
+    plt.show()
+    plt.close()
 
 # Must be run on a computer that has cloned the LOST repository
 if __name__ == "__main__":
   # Make clean and compile LOST (can comment out once run once)
-  make_clean_make()
+  # make_clean_make()
 
-  # Name of output folder and generated database
+  # Name of output folder
   output_folder: str = os.path.abspath("output")
-  database_name: str = "my-database.dat"
 
   # Generate database (can comment out once run once)
-  generate_database(database_name)
+  # database_name: str = "pyramid_database.dat"
+  # generate_pyramid_database(database_name)
+  
+  database_name: str = "tetra-20.dat"
+  generate_tetra_database(database_name)
 
   motion_blur_study(output_folder, database_name)
 
   dark_current_noise_study(output_folder, database_name)
+  # plot_motion_blur_results(os.path.abspath("interesting/MB_compareto_filtered_500/motion_blur_summary.csv"))
+  # plot_dark_current_results(os.path.abspath("interesting/DC_compareto_groundtruth_newval/dark_current_results.csv"))
