@@ -58,10 +58,10 @@ def generate_lost_image(
   i: int,
   database: str,
   output_folder: str,
-  width: int = 1024,
+  width: int = 1280,
   height: int = 1024,
-  exposure: float = 0.6,
-  fov: float = 20.0,
+  exposure: float = 0.4,
+  fov: float = 25.0,
 ):
   input_path = os.path.join(output_folder, f"input_{i}.png")
   raw_path = os.path.join(output_folder, f"raw.png")
@@ -80,7 +80,8 @@ def generate_lost_image(
       "--centroid-algo", "cog",
       "--star-id-algo", "py",   
       "--print-attitude", att_path,
-      "--generate-random-attitudes", "true",
+      "--generate-random-attitudes",
+      "--generate-time-based-seed",
       # "--plot-input", input_path,
       "--plot-raw-input", raw_path,
   ]
@@ -129,15 +130,23 @@ def run_LOST_and_filter_once(input_path: str, output_folder: str, database_name:
 
   # Check if output files were successfully read
   try: 
-    if load_attitude_file(output_path).get("attitude_known") == 0 or \
-       load_attitude_file(filtered_output_path).get("attitude_known") == 0:
+    if load_attitude_file(output_path).get("attitude_known") == 0:
       print("Attitude is not found")
-      return False
+      return "Read Error" 
+       
+    # ts lowk vibecoded so who knows if it will work 
+    if load_attitude_file(output_folder + "/true_attitude.txt").get("attitude_known") == 0:
+      print("Attitude is not found")
+      return "Read Error"
+    
+    if load_attitude_file(filtered_output_path).get("attitude_known") == 0:
+      print("Attitude is not found")
+      return "Blur Error"
   except FileNotFoundError:
     print("Output file not found")
-    return False
+    return "Read Error"
 
-  return True
+  return "Solved"
 
 def normalize(q):
     norm = math.sqrt(sum(x*x for x in q))
@@ -205,8 +214,8 @@ def motion_blur_study(output_folder: str, database_name: str):
   full_csv_path = os.path.join(output_folder, "motion_blur_full.csv")
   summary_csv_path = os.path.join(output_folder, "motion_blur_summary.csv")
 
-  runs_per_param = 50
-  kernel_sizes = range(1, 26)
+  runs_per_param = 1000
+  kernel_sizes = range(7,14,6)
   success_rates = []
   average_angle_error_degs = []
 
@@ -227,15 +236,23 @@ def motion_blur_study(output_folder: str, database_name: str):
     summary_writer.writerow([
       "kernel_size",
       "average_error_deg",
-      "success_rate"
+      "successes",
+      "valid_runs",
+      "success_rate",
+      "total_runs"
     ])
 
     # Modify this loop based on runs
     for kernel_size in kernel_sizes:
+
+      valid_runs = 0
+      total_runs = 0
+
       successes = 0
       angle_error_degs = []
 
-      for i in range(runs_per_param):
+      i = 0
+      while i < runs_per_param:
         # Generate random image to process
         input_path = generate_lost_image(
           i=i,
@@ -249,7 +266,13 @@ def motion_blur_study(output_folder: str, database_name: str):
 
         result = run_LOST_and_filter_once(input_path, output_folder, database_name, Filter.MOTION_BLUR, params)
 
-        if result:
+        total_runs += 1
+
+        if result == "Solved" or result == "Blur Error":
+
+          i += 1
+          valid_runs += 1
+          
           # Compare attitudes 
           true_att_path = os.path.join(output_folder, "true_attitude.txt")         
 
@@ -262,6 +285,17 @@ def motion_blur_study(output_folder: str, database_name: str):
             continue
           else:
             print("RESULT: Identified ACCURATE attitude for UNFILTERED image")
+          
+          if result == "Blur Error":
+            print("RESULT: Unable to identify attitude for FILTERED image")
+            full_writer.writerow([
+              kernel_size,
+              total_runs,
+              unfiltered_error_deg,
+              float("nan"),
+              False
+            ])
+            continue
 
           filtered_error_deg = compare_attitudes(output_path, filtered_output_path)
           
@@ -273,7 +307,7 @@ def motion_blur_study(output_folder: str, database_name: str):
           
           full_writer.writerow([
             kernel_size,
-            i,
+            total_runs,
             unfiltered_error_deg,
             filtered_error_deg,
             filtered_error_deg <= 0.05
@@ -284,17 +318,26 @@ def motion_blur_study(output_folder: str, database_name: str):
         else:
           angle_error_degs.append(float("nan"))
           print("RESULT: Unable to identify attitude for an image")
-    
-      success_rate = successes / runs_per_param
+     
+      if valid_runs != 0:
+        success_rate = successes / valid_runs
+        image_gen_success_rate = valid_runs / total_runs
+      else:
+        success_rate = 0.0
+        image_gen_success_rate = 0.0
       if angle_error_degs:
         average_angle_error_deg = np.nanmean(angle_error_degs)
       else:
         average_angle_error_deg = None
-      
+
       summary_writer.writerow([
         kernel_size,
         average_angle_error_deg,
-        success_rate
+        successes,
+        valid_runs,
+        success_rate,
+        total_runs,
+        image_gen_success_rate
       ])
 
       success_rates.append(success_rate)
@@ -337,7 +380,7 @@ def motion_blur_study(output_folder: str, database_name: str):
 def dark_current_noise_study(output_folder: str, database_name: str):
   csv_path = os.path.join(output_folder, "dark_current_results.csv")
 
-  runs = 1000
+  runs = 5
   successes = 0
   angle_error_degs = []
 
@@ -434,7 +477,7 @@ def dark_current_noise_study(output_folder: str, database_name: str):
 # Must be run on a computer that has cloned the LOST repository
 if __name__ == "__main__":
   # Make clean and compile LOST (can comment out once run once)
-  make_clean_make()
+  #make_clean_make()
 
   # Name of output folder and generated database
   output_folder: str = os.path.abspath("output")
@@ -445,4 +488,4 @@ if __name__ == "__main__":
 
   motion_blur_study(output_folder, database_name)
 
-  dark_current_noise_study(output_folder, database_name)
+  # dark_current_noise_study(output_folder, database_name)
